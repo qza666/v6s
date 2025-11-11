@@ -16,7 +16,7 @@ func main() {
 	log.SetOutput(os.Stdout)
 	cfg := config.ParseFlags()
 	if cfg.CIDR == "" {
-		log.Fatal("CIDR is required")
+		log.Fatal("必须指定 CIDR")
 	}
 
 	if cfg.AutoForwarding {
@@ -33,53 +33,41 @@ func main() {
 
 	var wg sync.WaitGroup
 
-	// 启动随机IPv6代理服务器
 	randomIPv6Proxy := proxy.NewProxyServer(cfg, true)
+	startHTTPServer(&wg, fmt.Sprintf("%s:%d", cfg.Bind, cfg.RandomIPv6Port), randomIPv6Proxy, "随机 IPv6 代理服务", true)
+
+	if len(cfg.MultiIPv4Config) > 0 {
+		log.Printf("启用多 IPv4 出口模式，共 %d 个地址", len(cfg.MultiIPv4Config))
+		for _, ipConfig := range cfg.MultiIPv4Config {
+			ipv4Cfg := *cfg
+			ipv4Cfg.RealIPv4 = ipConfig.IPv4
+			ipv4Cfg.RealIPv4Port = ipConfig.Port
+
+			handler := proxy.NewProxyServerWithSpecificIP(&ipv4Cfg, false, ipConfig.IPv4)
+			addr := fmt.Sprintf("%s:%d", ipConfig.IPv4, ipConfig.Port)
+			desc := fmt.Sprintf("IPv4 代理服务（出口 %s）", ipConfig.IPv4)
+			startHTTPServer(&wg, addr, handler, desc, false)
+		}
+	} else if cfg.RealIPv4 != "" {
+		realIPv4Proxy := proxy.NewProxyServer(cfg, false)
+		startHTTPServer(&wg, fmt.Sprintf("%s:%d", cfg.Bind, cfg.RealIPv4Port), realIPv4Proxy, "IPv4 出口代理服务", true)
+	} else {
+		log.Fatal("必须通过 --real-ipv4 或 --multi-ipv4 指定至少一个 IPv4 出口")
+	}
+
+	wg.Wait()
+}
+
+func startHTTPServer(wg *sync.WaitGroup, addr string, handler http.Handler, description string, fatalOnError bool) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		log.Printf("Starting random IPv6 proxy server on %s:%d", cfg.Bind, cfg.RandomIPv6Port)
-		err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Bind, cfg.RandomIPv6Port), randomIPv6Proxy)
-		if err != nil {
-			log.Fatal(err)
+		log.Printf("正在启动 %s，监听地址 %s", description, addr)
+		if err := http.ListenAndServe(addr, handler); err != nil {
+			if fatalOnError {
+				log.Fatalf("%s 启动失败：%v", description, err)
+			}
+			log.Printf("%s 已停止：%v", description, err)
 		}
 	}()
-
-	// 如果有多IP配置，为每个IP启动代理服务器
-	if len(cfg.MultiIPv4Config) > 0 {
-		log.Printf("Starting multi-IPv4 proxy servers...")
-		for _, ipConfig := range cfg.MultiIPv4Config {
-			wg.Add(1)
-			go func(ipCfg config.MultiIPConfig) {
-				defer wg.Done()
-				// 为每个IP创建专用的配置
-				ipv4Cfg := *cfg
-				ipv4Cfg.RealIPv4 = ipCfg.IPv4
-				
-				realIPv4Proxy := proxy.NewProxyServerWithSpecificIP(&ipv4Cfg, false, ipCfg.IPv4)
-				log.Printf("Starting IPv4 proxy server for %s on port %d", ipCfg.IPv4, ipCfg.Port)
-				err := http.ListenAndServe(fmt.Sprintf("%s:%d", ipCfg.IPv4, ipCfg.Port), realIPv4Proxy)
-				if err != nil {
-					log.Printf("Error starting proxy for %s:%d - %v", ipCfg.IPv4, ipCfg.Port, err)
-				}
-			}(ipConfig)
-		}
-	} else if cfg.RealIPv4 != "" {
-		// 单IP模式（向后兼容）
-		realIPv4Proxy := proxy.NewProxyServer(cfg, false)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			log.Printf("Starting real IPv4 proxy server on %s:%d", cfg.Bind, cfg.RealIPv4Port)
-			err := http.ListenAndServe(fmt.Sprintf("%s:%d", cfg.Bind, cfg.RealIPv4Port), realIPv4Proxy)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}()
-	} else {
-		log.Fatal("Either real-ipv4 or multi-ipv4 is required")
-	}
-
-	// 等待所有服务器
-	wg.Wait()
 }

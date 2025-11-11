@@ -1,55 +1,48 @@
 package sysutils
 
 import (
-	"fmt"
 	"log"
 	"os/exec"
 	"os/user"
 )
 
 func AddV6Route(cidr string) {
-	if !isRoot() {
-		log.Fatal("You must run this program as root")
-	}
+	ensureRoot()
 
 	delCmd := exec.Command("ip", "route", "del", "local", cidr, "dev", "lo")
-	delCmd.Run()
+	if err := delCmd.Run(); err != nil {
+		log.Printf("尝试删除已存在的本地路由时出现错误：%v", err)
+	}
 
 	addCmd := exec.Command("ip", "route", "add", "local", cidr, "dev", "lo")
 	if err := addCmd.Run(); err != nil {
-		log.Fatalf("Failed to add route: %v", err)
-	} else {
-		log.Printf("Added route %s dev lo", cidr)
+		log.Fatalf("添加路由失败：%v", err)
 	}
+	log.Printf("已为本地接口添加路由 %s", cidr)
 }
 
 func SetV6Forwarding() {
-	if !isRoot() {
-		log.Fatal("You must run this program as root")
-	}
+	ensureRoot()
 
-	err := exec.Command("sysctl", "-w", "net.ipv6.conf.all.forwarding=1").Run()
-	if err != nil {
-		log.Fatalf("Failed to enable IPv6 forwarding: %v", err)
+	if err := exec.Command("sysctl", "-w", "net.ipv6.conf.all.forwarding=1").Run(); err != nil {
+		log.Fatalf("启用 IPv6 转发失败：%v", err)
 	}
 }
 
 func SetIpNonLocalBind() {
-	if !isRoot() {
-		log.Fatal("You must run this program as root")
-	}
+	ensureRoot()
 
-	err := exec.Command("sysctl", "-w", "net.ipv6.ip_nonlocal_bind=1").Run()
-	if err != nil {
-		log.Fatalf("Failed to enable IPv6 non local bind: %v", err)
+	if err := exec.Command("sysctl", "-w", "net.ipv6.ip_nonlocal_bind=1").Run(); err != nil {
+		log.Fatalf("启用 IPv6 非本地绑定失败：%v", err)
 	}
 }
 
-func isRoot() bool {
+func ensureRoot() {
 	currentUser, err := user.Current()
 	if err != nil {
-		fmt.Printf("Failed to get current user: %s\n", err)
-		return false
+		log.Fatalf("获取当前用户失败：%v", err)
 	}
-	return currentUser.Uid == "0"
+	if currentUser.Uid != "0" {
+		log.Fatal("请使用 root 权限运行该程序")
+	}
 }
