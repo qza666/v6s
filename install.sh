@@ -1,5 +1,15 @@
 #!/bin/bash
 
+# 确保使用 bash 运行脚本，避免因 sudo 等方式导致使用 sh 而出现语法错误
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+    echo "❌ 错误: 此脚本需要 bash 环境"
+    echo "请尝试使用 'bash install.sh' 或确保系统已安装 bash"
+    exit 1
+fi
+
 # IPv6代理服务器一键安装脚本
 # 支持单IPv4和多IPv4配置模式
 # 必须在交互式终端中运行
