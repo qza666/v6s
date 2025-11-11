@@ -123,10 +123,13 @@ install_basic_tools() {
     local base_packages=(curl wget)
     local dev_packages=(build-essential git)
     local net_packages=(ufw iproute2 net-tools)
+    local all_packages=(
+        "${base_packages[@]}"
+        "${dev_packages[@]}"
+        "${net_packages[@]}"
+    )
 
-    ensure_packages_installed "${base_packages[@]}"
-    ensure_packages_installed "${dev_packages[@]}"
-    ensure_packages_installed "${net_packages[@]}"
+    ensure_packages_installed "${all_packages[@]}"
 
     # 验证关键工具是否安装成功
     local required_tools=(git curl wget)
