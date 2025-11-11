@@ -31,6 +31,7 @@ REPO_DIR="v6"
 TUNNEL_NAME="he-ipv6"
 CONFIG_DIR="/etc/he-ipv6"
 CONFIG_FILE="$CONFIG_DIR/$TUNNEL_NAME.conf"
+APT_UPDATED=0
 
 # 多IP配置数组
 declare -a MULTI_IPV4_ARRAY
@@ -91,36 +92,45 @@ check_network() {
 }
 
 # 检查并安装依赖
-install_packages() {
-    local packages="$1"
-    print_message $BLUE "正在安装: $packages"
-    apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $packages
+ensure_packages_installed() {
+    local packages=("$@")
+    local missing=()
+
+    for pkg in "${packages[@]}"; do
+        if ! dpkg -s "$pkg" &>/dev/null; then
+            missing+=("$pkg")
+        fi
+    done
+
+    if [ ${#missing[@]} -eq 0 ]; then
+        print_message $GREEN "依赖已满足: ${packages[*]}"
+        return 0
+    fi
+
+    if [ $APT_UPDATED -eq 0 ]; then
+        print_message $BLUE "更新apt软件包索引..."
+        apt-get update -qq
+        APT_UPDATED=1
+    fi
+
+    print_message $BLUE "正在安装缺失的依赖: ${missing[*]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
 }
 
 # 安装基本工具
 install_basic_tools() {
     print_message $BLUE "检查并安装必要工具..."
-    local base_tools="curl wget"
-    local dev_tools="build-essential git"
-    local net_tools="ufw iproute2 net-tools"
-    
-    # 首先安装基本工具
-    if ! command -v curl &>/dev/null || ! command -v wget &>/dev/null; then
-        install_packages "$base_tools"
-    fi
-    
-    # 然后安装开发工具
-    if ! command -v git &>/dev/null; then
-        install_packages "$dev_tools"
-    fi
-    
-    # 最后安装网络工具
-    install_packages "$net_tools"
-    
+    local base_packages=(curl wget)
+    local dev_packages=(build-essential git)
+    local net_packages=(ufw iproute2 net-tools)
+
+    ensure_packages_installed "${base_packages[@]}"
+    ensure_packages_installed "${dev_packages[@]}"
+    ensure_packages_installed "${net_packages[@]}"
+
     # 验证关键工具是否安装成功
-    local required_tools="git curl wget"
-    for tool in $required_tools; do
+    local required_tools=(git curl wget)
+    for tool in "${required_tools[@]}"; do
         if ! command -v $tool &>/dev/null; then
             print_message $RED "错误: $tool 安装失败"
             exit 1
