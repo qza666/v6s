@@ -30,7 +30,7 @@ func generateRandomIPv6(cidr string) (net.IP, error) {
 
 	// 获取前缀长度
 	prefixLen, _ := ipNet.Mask.Size()
-	
+
 	// 计算需要随机化的字节数
 	hostBits := 128 - prefixLen
 	if hostBits <= 0 {
@@ -63,6 +63,13 @@ func generateRandomIPv6(cidr string) (net.IP, error) {
 }
 
 func getIPv6Address(domain string) (string, error) {
+	if ip := net.ParseIP(domain); ip != nil {
+		if ip.To4() == nil {
+			return ip.String(), nil
+		}
+		return "", fmt.Errorf("provided address %s is not IPv6", domain)
+	}
+
 	ips, err := net.LookupIP(domain)
 	if err != nil {
 		return "", err
