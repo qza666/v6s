@@ -3,9 +3,9 @@ package dns
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type DoHResponse struct {
@@ -28,42 +28,41 @@ type DoHResponse struct {
 }
 
 func ResolveDNSOverHTTPS(domain string) (string, error) {
-	dohURL := "https://cloudflare-dns.com/dns-query"
+	const dohURL = "https://cloudflare-dns.com/dns-query"
+
 	query := url.Values{}
 	query.Add("name", domain)
 	query.Add("type", "AAAA")
 
-	req, err := http.NewRequest("GET", dohURL, nil)
+	req, err := http.NewRequest(http.MethodGet, dohURL, nil)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("创建 DoH 请求失败：%w", err)
 	}
 
 	req.URL.RawQuery = query.Encode()
-	req.Header.Add("accept", "application/dns-json")
+	req.Header.Set("Accept", "application/dns-json")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("DoH 请求发送失败：%w", err)
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("DoH 请求返回状态码 %d", resp.StatusCode)
 	}
 
 	var dohResp DoHResponse
-	err = json.Unmarshal(body, &dohResp)
-	if err != nil {
-		return "", err
+	if err := json.NewDecoder(resp.Body).Decode(&dohResp); err != nil {
+		return "", fmt.Errorf("解析 DoH 响应失败：%w", err)
 	}
 
 	for _, answer := range dohResp.Answer {
-		if answer.Type == 28 { // AAAA record
+		if answer.Type == 28 { // AAAA 记录
 			return answer.Data, nil
 		}
 	}
 
-	return "", fmt.Errorf("no AAAA record found for %s", domain)
+	return "", fmt.Errorf("未找到 %s 的 AAAA 记录", domain)
 }
